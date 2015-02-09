@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.Writer.Lazy
 import Control.Monad.State.Lazy
 import Data.List
@@ -11,11 +12,15 @@ type Id = Int
 type Name = String
 
 data Type = TyVar TypeVar
+          | TyRowVar RowVar
           | TyCon Name [Type]
           | TyProd [TypeField]
           deriving Eq
 
-data TypeVar = TypeVar Id [TypeField]
+data TypeVar = TypeVar Id
+             deriving Eq
+
+data RowVar = RowVar Id [TypeField]
              deriving Eq
 
 data TypeField = TypeField Name Type
@@ -34,13 +39,17 @@ newtype Lysa a = Lysa { unLysa :: WriterT [Message] (State LysaState) a }
 
 instance Show Type where
   show (TyVar tv) = show tv
+  show (TyRowVar rv) = show rv
   show (TyCon name []) = name
   show (TyCon name tys) = name ++ "[" ++ (intercalate ", " $ map show tys) ++ "]"
   show (TyProd fs) = "{" ++ intercalate "; " (map show fs) ++ "}"
 
 instance Show TypeVar where
-  show (TypeVar id []) = "t" ++ show id
-  show (TypeVar id cs) = "t" ++ show id ++ " with " ++ (intercalate " and " $ map show cs)
+  show (TypeVar id) = "t" ++ show id
+
+instance Show RowVar where
+  show (RowVar id []) = "r" ++ show id
+  show (RowVar id cs) = "r" ++ show id ++ " with " ++ (intercalate " and " $ map show cs)
 
 instance Show TypeField where
   show (TypeField name ty) = name ++ ": " ++ show ty
@@ -51,8 +60,11 @@ nextId = do
   modify $ \s -> s{ idSupply = idSupply s + 1 }
   return id
 
-freshTv :: [TypeField] -> Lysa TypeVar
-freshTv cs = nextId >>= return . flip TypeVar cs
+freshTv :: Lysa TypeVar
+freshTv = liftM TypeVar nextId
+
+freshRv :: [TypeField] -> Lysa RowVar
+freshRv cs = liftM (flip RowVar cs) nextId
 
 -- Logging
 
@@ -81,7 +93,7 @@ lysa :: Lysa Type
 lysa = do
   reportInfo "Lysa v0.1 (c) Alex Muscar 2015\n" 
   reportInfo "Certainty of death, *small* chance of success... What are we waiting for?\n"
-  TyVar <$> freshTv [TypeField "x" $ TyCon "Int" [], TypeField "y" $ TyCon "Int" []]
+  TyRowVar <$> freshRv [TypeField "x" $ TyCon "Int" [], TypeField "y" $ TyCon "Int" []]
 
 main :: IO ()
 main = print $ runLysa lysa
